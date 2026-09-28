@@ -17,6 +17,7 @@ object GpxDbUtils {
 	private const val GPX_DIR_TABLE_INDEX = "gpxDirIndexNameDir"
 	private const val GPX_APPEARANCE_TRIGGER = "triggerGpxAppearanceLastModified"
 	private const val GPX_DIR_APPEARANCE_TRIGGER = "triggerGpxDirAppearanceLastModified"
+	private const val ANALYSIS_VERSION_BITS = 10
 
 	fun getCreateGpxTableQuery(): String {
 		return getCreateTableQuery(GpxParameter.entries, GPX_TABLE_NAME)
@@ -275,7 +276,7 @@ object GpxDbUtils {
 					|| (item.getAnalysis()!!.getLatLonStart() == null && item.getAnalysis()!!.points > 0)
 					|| item.requireParameter(FILE_LAST_MODIFIED_TIME) as Long != item.file.lastModified()
 					|| item.requireParameter(FILE_CREATION_TIME) as Long <= 0
-					|| createDataVersion(ANALYSIS_VERSION) > item.requireParameter(DATA_VERSION) as Int
+					|| getAnalysisVersion(item.requireParameter(DATA_VERSION) as Int) < ANALYSIS_VERSION
 		}
 		return true
 	}
@@ -340,8 +341,15 @@ object GpxDbUtils {
 		return file.name().lowercase().endsWith(IndexConstants.GPX_FILE_EXT)
 	}
 
+	// DATA_VERSION keeps the schema version above the analysis version. Only the analysis part
+	// decides whether a track is read again: a DB_VERSION bump alone migrates the schema without
+	// re-reading the whole library, bump ANALYSIS_VERSION when the reader has to run over it again
 	fun createDataVersion(analysisVersion: Int): Int {
-		return (GpxDatabase.DB_VERSION shl 10) + analysisVersion
+		return (GpxDatabase.DB_VERSION shl ANALYSIS_VERSION_BITS) + analysisVersion
+	}
+
+	fun getAnalysisVersion(dataVersion: Int): Int {
+		return dataVersion and ((1 shl ANALYSIS_VERSION_BITS) - 1)
 	}
 
 	private fun getCreateAppearanceTriggerQuery(tableName: String, triggerName: String): String {

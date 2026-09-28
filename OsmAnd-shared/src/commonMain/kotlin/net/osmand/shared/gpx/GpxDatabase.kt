@@ -23,6 +23,7 @@ class GpxDatabase {
 	companion object {
 		val log = LoggerFactory.getLogger("GpxDatabase")
 
+		// a bump only runs GpxDbUtils.onUpgrade: existing tracks are not read again (see ANALYSIS_VERSION)
 		const val DB_VERSION = 36
 		const val DB_NAME = "gpx_database"
 		const val GPX_TABLE_NAME = "gpxTable"
