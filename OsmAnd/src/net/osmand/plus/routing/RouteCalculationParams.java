@@ -33,6 +33,7 @@ public class RouteCalculationParams {
 	public GpxFile gpxFile;
 
 	public RouteCalculationProgress calculationProgress;
+	public boolean memoryLimitExceeded; // set by NativeRoutingMemoryGuard together with calculationProgress.isCancelled
 	public RouteCalculationProgressListener calculationProgressListener;
 	public RouteCalculationResultListener alternateResultListener;
 

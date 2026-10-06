@@ -12,93 +12,83 @@ import net.osmand.router.RouteCalculationProgress;
 import org.apache.commons.logging.Log;
 
 /**
- * Native routing (A* and HH) has no limit on its search graph, only on the road tile cache.
- * A long route without HH (pedestrian, truck, HH fallback) grows native memory to 4-10 GB and
- * the process dies inside the allocator. The guard watches the native heap while a route is
- * calculated and cancels the calculation (the native loop polls isCancelled) when it grows
- * more than the budget, so the user gets an error instead of a crash and a restart loop.
- * Completed calculations in crash reports grow native memory by 112 MB (p99), 724 MB at most;
- * a pedestrian A* route needs about 1 GB for 40 km, 2.8 GB for 90 km and 5.9 GB for 110 km.
+ * Native routing (A* and HH) has no limit on its search graph, only on the road tile cache, so a
+ * long route without HH (pedestrian, truck, HH fallback) grows the native heap until the process
+ * is killed. The guard polls the native heap of the process while a route is calculated and
+ * cancels the calculation (the native loop polls isCancelled) once the heap reaches a limit that
+ * leaves the system a reserve of RAM, so the user gets an error instead of a crash.
  */
 class NativeRoutingMemoryGuard {
 
 	private static final Log log = PlatformUtil.getLog(NativeRoutingMemoryGuard.class);
 
 	private static final long MB = 1 << 20;
-	private static final long MIN_BUDGET = 1536 * MB;
-	private static final long MAX_BUDGET = 4096 * MB;
-	private static final double BUDGET_RAM_SHARE = 0.5;
+	private static final long RESERVED_RAM = 1024 * MB;
+	private static final long MIN_LIMIT = 512 * MB;
+	private static final long MAX_LIMIT = 3072 * MB;
 	private static final long CHECK_INTERVAL_MS = 200;
 
-	private final RouteCalculationProgress progress;
-	private final long budget;
-	private final long startAllocated;
-	private volatile boolean running = true;
-	private volatile boolean exceeded;
-	private volatile long peakGrowth;
+	private final RouteCalculationParams params;
+	private final long limit;
+	private final Thread thread;
+	private long peakAllocated;
 
-	private NativeRoutingMemoryGuard(@NonNull RouteCalculationProgress progress, long budget) {
-		this.progress = progress;
-		this.budget = budget;
-		this.startAllocated = Debug.getNativeHeapAllocatedSize();
+	private NativeRoutingMemoryGuard(@NonNull RouteCalculationParams params) {
+		this.params = params;
+		this.limit = getLimit(params.ctx);
+		this.thread = new Thread(this::watch, "RoutingMemoryGuard");
+		thread.setDaemon(true);
 	}
 
 	@NonNull
-	static NativeRoutingMemoryGuard start(@NonNull Context ctx, @NonNull RouteCalculationProgress progress) {
-		NativeRoutingMemoryGuard guard = new NativeRoutingMemoryGuard(progress, getBudget(ctx));
-		Thread thread = new Thread(guard::watch, "RoutingMemoryGuard");
-		thread.setDaemon(true);
-		thread.start();
+	static NativeRoutingMemoryGuard start(@NonNull RouteCalculationParams params) {
+		NativeRoutingMemoryGuard guard = new NativeRoutingMemoryGuard(params);
+		guard.thread.start();
 		return guard;
 	}
 
-	private static long getBudget(@NonNull Context ctx) {
-		long totalMem = 0;
-		ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
-		if (am != null) {
-			ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
-			am.getMemoryInfo(info);
-			totalMem = info.totalMem;
-		}
-		return Math.max(MIN_BUDGET, Math.min(MAX_BUDGET, (long) (totalMem * BUDGET_RAM_SHARE)));
+	/**
+	 * Device RAM minus 1 GB for the system and the rest of the app, within 512 MB and 3 GB:
+	 * in crash reports the process died from 3.1 GB of native heap on.
+	 */
+	private static long getLimit(@NonNull Context ctx) {
+		ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+		((ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryInfo(info);
+		return Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, info.totalMem - RESERVED_RAM));
 	}
 
 	private void watch() {
-		while (running && !progress.isCancelled) {
-			long growth = Debug.getNativeHeapAllocatedSize() - startAllocated;
-			peakGrowth = Math.max(peakGrowth, growth);
-			if (growth > budget) {
-				exceeded = true;
+		RouteCalculationProgress progress = params.calculationProgress;
+		while (!progress.isCancelled) {
+			long allocated = Debug.getNativeHeapAllocatedSize();
+			peakAllocated = Math.max(peakAllocated, allocated);
+			if (allocated > limit) {
+				params.memoryLimitExceeded = true;
 				progress.isCancelled = true;
-				log.error("Route calculation stopped: native memory grew by " + growth / MB
-						+ " MB, budget " + budget / MB + " MB");
-				return;
+				log.error("Route calculation stopped: native heap " + allocated / MB + " MB, limit " + limit / MB + " MB");
+				break;
 			}
 			try {
 				Thread.sleep(CHECK_INTERVAL_MS);
 			} catch (InterruptedException e) {
-				return;
+				break;
 			}
 		}
-	}
-
-	boolean isExceeded() {
-		return exceeded;
+		log.info("Route calculation native heap peak " + peakAllocated / MB + " MB, limit " + limit / MB + " MB");
 	}
 
 	/**
-	 * Stops watching. Returns true if the guard cancelled the calculation; the cancel flag is then
-	 * cleared, otherwise RouteRecalculationTask drops the result silently as a user cancel.
+	 * Stops the watcher and waits for it, so the flags do not change after this returns; a second
+	 * call is a no-op. Returns true if the guard cancelled the calculation: isCancelled stays set,
+	 * and RouteRecalculationTask tells this stop from a requested one by params.memoryLimitExceeded.
 	 */
 	boolean stop() {
-		if (!running) {
-			return exceeded;
+		thread.interrupt();
+		try {
+			thread.join();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 		}
-		running = false;
-		if (exceeded) {
-			progress.isCancelled = false;
-		}
-		log.info("Route calculation native memory growth " + peakGrowth / MB + " MB, budget " + budget / MB + " MB");
-		return exceeded;
+		return params.memoryLimitExceeded;
 	}
 }

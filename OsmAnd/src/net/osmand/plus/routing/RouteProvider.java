@@ -461,7 +461,7 @@ public class RouteProvider {
 	private RouteCalculationResult calcOfflineRouteImpl(RouteCalculationParams params,
 	                                                    RoutePlannerFrontEnd router, RoutingContext ctx, RoutingContext complexCtx, LatLon st, LatLon en,
 	                                                    List<LatLon> inters, PrecalculatedRouteDirection precalculated) throws IOException {
-		NativeRoutingMemoryGuard memoryGuard = NativeRoutingMemoryGuard.start(params.ctx, ctx.calculationProgress);
+		NativeRoutingMemoryGuard memoryGuard = NativeRoutingMemoryGuard.start(params);
 		try {
 			RouteResultPreparation.RouteCalcResult result = null;
 			if (complexCtx != null) {
@@ -476,7 +476,7 @@ public class RouteProvider {
 					});
 				}
 			}
-			if (result == null && !memoryGuard.isExceeded()) {
+			if (result == null) {
 				result = router.searchRoute(ctx, st, en, inters);
 			}
 			if (memoryGuard.stop()) {
@@ -521,7 +521,7 @@ public class RouteProvider {
 			String s = " (" + avl + " MB available of " + max  + ") ";
 			return new RouteCalculationResult("Not enough process memory "+ s);
 		} finally {
-			memoryGuard.stop();
+			memoryGuard.stop(); // no-op after the stop above; needed when searchRoute threw
 		}
 	}
 

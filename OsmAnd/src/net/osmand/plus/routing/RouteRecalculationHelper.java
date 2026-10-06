@@ -393,6 +393,7 @@ class RouteRecalculationHelper {
 
 		public void stopCalculation() {
 			params.calculationProgress.isCancelled = true;
+			params.memoryLimitExceeded = false; // a stop requested here wins over a stop by the memory guard
 		}
 
 		private OsmandSettings getSettings() {
@@ -408,8 +409,8 @@ class RouteRecalculationHelper {
 			OsmandSettings settings = getSettings();
 			RouteCalculationResult res = provider.calculateRouteImpl(params);
 			routingHelper.getApplication().getMemoryLog().onRouteCalculated();
-			if (params.calculationProgress.isCancelled) {
-				return;
+			if (params.calculationProgress.isCancelled && !params.memoryLimitExceeded) {
+				return; // stopped by stopCalculation() or the caller; a stop by NativeRoutingMemoryGuard is an error to show
 			}
 			boolean onlineSourceWithoutInternet = !res.isCalculated() &&
 					params.mode.getRouteService().isOnline() && !settings.isInternetConnectionAvailable();
