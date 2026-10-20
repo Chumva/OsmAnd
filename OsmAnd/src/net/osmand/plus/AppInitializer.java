@@ -527,6 +527,8 @@ public class AppInitializer implements IProgress {
 				importBundledSettingsSync();
 				notifyEvent(BUNDLED_OSF_IMPORTED);
 			}
+			// Asynchronous, so before the long steps: the first motd request should find the campaign stored
+			InstallReferrerReader.readOnce(app);
 			app.getRendererRegistry().initRenderers(warnings);
 			notifyEvent(INIT_RENDERERS);
 			// native depends on renderers
@@ -556,7 +558,6 @@ public class AppInitializer implements IProgress {
 			app.searchUICore.initSearchUICore();
 			notifyEvent(SEARCH_UI_CORE_INITIALIZED);
 			checkLiveUpdatesAlerts();
-			InstallReferrerReader.readOnce(app);
 			connectToBRouter();
 			app.helpArticlesHelper.loadArticles();
 			notifyEvent(HELP_ARTICLES_INITIALIZED);

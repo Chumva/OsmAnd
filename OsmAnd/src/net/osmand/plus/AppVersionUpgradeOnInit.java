@@ -175,8 +175,9 @@ public class AppVersionUpgradeOnInit {
 	public static final int VERSION_5_3_05 = 5305;
 	public static final int VERSION_5_3_06 = 5306;
 	public static final int VERSION_5_4_01 = 5401;
+	public static final int VERSION_5_4_02 = 5402;
 
-	public static final int LAST_APP_VERSION = VERSION_5_4_01;
+	public static final int LAST_APP_VERSION = VERSION_5_4_02;
 
 	private static final String VERSION_INSTALLED = "VERSION_INSTALLED";
 
@@ -354,6 +355,9 @@ public class AppVersionUpgradeOnInit {
 							init -> migrateTransparentWidgetsToPanelsAppearance()
 					);
 				}
+				if (prevAppVersion < VERSION_5_4_02) {
+					rereadEmptyInstallReferrer(settings);
+				}
 				startPrefs.edit().putInt(VERSION_INSTALLED_NUMBER, lastVersion).commit();
 				startPrefs.edit().putString(VERSION_INSTALLED, Version.getFullVersion(app)).commit();
 				startPrefs.edit().putLong(UPDATE_TIME_MS, System.currentTimeMillis()).commit();
@@ -474,6 +478,14 @@ public class AppVersionUpgradeOnInit {
 					}
 				}
 			}
+		}
+	}
+
+	// Up to 5.4.01 a "://" in a referrer value stored an empty campaign and marked the install as
+	// checked: read the referrer once more, Play keeps it for 90 days after the install
+	private void rereadEmptyInstallReferrer(@NonNull OsmandSettings settings) {
+		if (settings.INSTALL_REFERRER_CHECKED.get() && Algorithms.isEmpty(settings.INSTALL_REFERRER.get())) {
+			settings.INSTALL_REFERRER_CHECKED.set(false);
 		}
 	}
 

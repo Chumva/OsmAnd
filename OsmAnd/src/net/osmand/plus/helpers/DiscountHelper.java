@@ -37,6 +37,7 @@ import net.osmand.plus.inapp.InAppPurchases.InAppPurchase;
 import net.osmand.plus.inapp.InAppPurchases.InAppSubscription;
 import net.osmand.plus.inapp.InAppPurchases.InAppSubscriptionList;
 import net.osmand.plus.inapp.InstallReferrer;
+import net.osmand.plus.inapp.InstallReferrerReader;
 import net.osmand.plus.plugins.OsmandPlugin;
 import net.osmand.plus.plugins.PluginsHelper;
 import net.osmand.plus.poi.PoiUIFilter;
@@ -71,6 +72,8 @@ public class DiscountHelper {
 	private static PoiUIFilter mFilter;
 	private static boolean mFilterVisible;
 	private static final String URL = "https://osmand.net/api/motd";
+	// How long the first motd request of an install waits for the Google Play install referrer
+	private static final long INSTALL_REFERRER_WAIT_MS = 5000;
 	private static final String INAPP_PREFIX = "osmand-in-app:";
 	private static final String SEARCH_QUERY_PREFIX = "osmand-search-query:";
 	private static final String SHOW_POI_PREFIX = "osmand-show-poi:";
@@ -125,7 +128,6 @@ public class DiscountHelper {
 		pms.put("nd", String.valueOf(app.getAppInitializer().getFirstInstalledDays()));
 		pms.put("ns", String.valueOf(app.getAppInitializer().getNumberOfStarts()));
 		pms.put("lang", app.getLanguage() + "");
-		InstallReferrer.addParams(app, pms);
 		List<String> features = getFeatures(app);
 		if (!features.isEmpty()) {
 			pms.put("features", TextUtils.join(",", features));
@@ -141,6 +143,9 @@ public class DiscountHelper {
 			@Override
 			protected String doInBackground(Void... params) {
 				try {
+					// The referrer is read asynchronously at startup and may still be on its way
+					InstallReferrerReader.awaitRead(INSTALL_REFERRER_WAIT_MS);
+					InstallReferrer.addParams(app, pms);
 					return AndroidNetworkUtils.sendRequest(mapActivity.getApp(),
 							URL, pms, "Requesting discount info...", false, false);
 				} catch (Exception e) {

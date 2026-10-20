@@ -9,4 +9,7 @@ public class InstallReferrerReader {
 
 	public static void readOnce(@NonNull OsmandApplication app) {
 	}
+
+	public static void awaitRead(long timeoutMs) {
+	}
 }
